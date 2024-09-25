@@ -1,12 +1,17 @@
 import datetime
 import backtrader as bt
+import pandas as pd
 
 from forecast import Forecast
 from data_df import load_data
 
 
-# Создаем собственный класс Sizer
 class USDTSizer(bt.Sizer):
+    """
+    Собственный класс Sizer
+    Корректен Только для Пар XXX/USDT
+    Чтобы сделать универсальным (и для Кросс-Курсов) нужно брать запрос на котировку
+    """
     params = {'usdt': 1000,
               'min_size': 0.00001}
     def __init__(self):
@@ -55,12 +60,13 @@ class ForecastStrategy(bt.Strategy):
         """
         self.order = None  # Заявка
         self.forecast = Forecast(self.datas[:30]) # сюда передать данные свечей
+        self.trades = pd.DataFrame(columns=['side', 'price_open', 'price_close', 'size', 'cost', 'pnl', 'commis', 'pnlcomm'])
 
     def next(self):
         """
         Приход Нового Бара
         """
-        self.log()
+        self.log(f'Close = {self.datas[0].close[0]}')
 
         if self.order: # Если есть неисполненная Заявка # Выходим
             return
@@ -79,12 +85,11 @@ class ForecastStrategy(bt.Strategy):
             if (self.position.size > 0 and predict) or (self.position.size < 0 and not predict):
                 return
             # Переворачиваемся
+            self.order = self.close()
             if (self.position.size > 0 and not predict):
-                self.order = self.close()
                 self.log(f'Close LONG (BUY) Position: {self.position.size}')
                 self.order = self.sell()
             elif (self.position.size < 0 and predict):
-                self.order = self.close()
                 self.log(f'Close SHORT (SELL) Position: {self.position.size}')
                 self.order = self.buy()
 
@@ -112,13 +117,39 @@ class ForecastStrategy(bt.Strategy):
         """
         if not trade.isclosed:  # Если позиция не закрыта
             return  # то статус позиции не изменился, выходим, дальше не продолжаем
-        if trade.pnlcomm >= 0:
-            self.log(f'Trade closed with PPOFIT, Gross={trade.pnl:.2f}, NET={trade.pnlcomm:.2f}')
-        else:
-            self.log(f'Trade closed with LOSS, Gross={trade.pnl:.2f}, NET={trade.pnlcomm:.2f}')
+        message = 'PPOFIT' if trade.pnlcomm >= 0 else 'LOSS'
+        self.log(f'Trade closed with {message}, Gross={trade.pnl:.2f}, NET={trade.pnlcomm:.2f}')
+        self.add_trade(trade)
+
+    def add_trade(self, trade):
+        side = 'LONG' if trade.long else 'SHORT'
+        price_open = 0
+        size = 0
+        cost = 0
+        # (trade.price, trade.pnl, trade.pnlcomm, trade.commission, trade.long)
+        # ['side', 'price_open', 'price_close', 'size', 'cost', 'pnl', 'commis', 'pnlcomm']
+        self.trades.loc[len(self.trades)] = (side, price_open, trade.price, size, cost, trade.pnl, trade.commission, trade.pnlcomm)
+
+
+    def stop(self):
+        sum_pnl = self.trades['pnl'].sum()
+        sum_comm = self.trades['commis'].sum()
+        sum_pnlcomm = self.trades['pnlcomm'].sum()
+        mean_pnl = self.trades['pnl'].mean()
+        mean_pnlcomm = self.trades['pnlcomm'].mean()
+
+        print(self.trades)
+        print(f'{sum_pnl = :.2f} | {sum_pnlcomm = :.2f} | {sum_comm = :.2f} || {mean_pnl = :.2f} | {mean_pnlcomm = :.2f}')
+
+
+
 
 
 if __name__ == '__main__': # Точка Входа при запуске этого скрипта
+
+    pd.options.display.width = None  # Отображение Таблицы на весь Экран
+    pd.options.display.max_columns = 16  # Макс Кол-во Отображаемых Колонок
+    pd.options.display.max_rows = 10  # Макс Кол-во Отображаемых Cтрок
 
     filename = 'F:\! PYTON\PyCharm\JupyterLab\data\ohlcvs\ETHUSDT_1d.csv'
     data = bt.feeds.PandasData(dataname=load_data(filename, start='2024-08-01', end=''))
@@ -132,4 +163,5 @@ if __name__ == '__main__': # Точка Входа при запуске это�
     print(f'Стартовый капитал: {cerebro.broker.getvalue():.0f}') # :.2f - точность 2 знака после десятичной точки
     cerebro.run() # Запуск ТС
     print(f'Конечный Капитал: {cerebro.broker.getvalue():.0f}')
-    cerebro.plot(style='candlestick') # Печать Графики Котировок+Объемы + Эквити + Сделки. // Требуется версия 3.2.2 matplotlib #
+    cerebro.plot(style='candlestick', barup='green', subplot=False) # Печать Графики Котировок+Объемы + Эквити + Сделки. // Требуется версия 3.2.2 matplotlib #
+
