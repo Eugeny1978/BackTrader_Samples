@@ -28,7 +28,7 @@ class PriceMACross(bt.Strategy):
                 self.log(f'Sold @{order.executed.price:.2f}, Cost={order.executed.value:.2f}, Comm={order.executed.comm:.2f}')
             self.BarExecuted = len(self) # Номер Бара, на котором была исполнена Заявка
         elif order.status in [order.Canceled, order.Margin, order.Rejected]: # Заявка [Отменена, НедостаточноСредств, ОтклоненаБрокером ]
-            self.log('Canceled/Margin/Rejected')
+            self.log('Canceled / Margin (Insufficient balance) / Rejected')
         self.Order = None # Этой заявки больше нет
 
     def notify_trade(self, trade):
