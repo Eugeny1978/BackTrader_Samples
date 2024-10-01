@@ -44,6 +44,7 @@ class USDTSizer(bt.Sizer):
 
 
 class ForecastStrategy(bt.Strategy):
+    columns = ['side', 'open_price', 'close_price', 'size', 'cost', 'pnl', 'commis', 'pnlcomm']
 
     def log(self, message=None, dt=None):
         """
@@ -60,7 +61,8 @@ class ForecastStrategy(bt.Strategy):
         """
         self.order = None  # Заявка
         self.forecast = Forecast(self.datas[:30]) # сюда передать данные свечей
-        self.trades = pd.DataFrame(columns=['side', 'price_open', 'price_close', 'size', 'cost', 'pnl', 'commis', 'pnlcomm'])
+        self.trades = pd.DataFrame(columns=self.columns)
+        self.orders = pd.DataFrame(columns=self.columns)
 
     def next(self):
         """
@@ -75,10 +77,8 @@ class ForecastStrategy(bt.Strategy):
 
         if not self.position:
             if predict: # Прогноз на Рост
-                self.log('BUY')
                 self.order = self.buy() # Заявка на Покупку по Рынку
             else: # Прогноз на Падение
-                self.log('SELL')
                 self.order = self.sell() # Заявка на Продажу по Рынку
         else:
             # Продолжаем Держать Позицию
@@ -87,11 +87,13 @@ class ForecastStrategy(bt.Strategy):
             # Переворачиваемся
             self.order = self.close()
             if (self.position.size > 0 and not predict):
-                self.log(f'Close LONG (BUY) Position: {self.position.size}')
+                self.log(f'Close LONG (SELL) Position: {self.position.size}')
                 self.order = self.sell()
+                self.log(f'Open SHORT (SELL) Position: {self.order.size}')
             elif (self.position.size < 0 and predict):
-                self.log(f'Close SHORT (SELL) Position: {self.position.size}')
+                self.log(f'Close SHORT (BYU) Position: {self.position.size}')
                 self.order = self.buy()
+                self.log(f'Open LONG (BYU) Position: {self.order.size}')
 
     def notify_order(self, order):
         """
@@ -109,6 +111,7 @@ class ForecastStrategy(bt.Strategy):
             self.BarExecuted = len(self) # Номер Бара, на котором была исполнена Заявка
         elif order.status in [order.Canceled, order.Margin, order.Rejected]: # Заявка [Отменена, НедостаточноСредств, ОтклоненаБрокером ]
             self.log('Canceled / Margin (Insufficient balance) / Rejected')
+        self.add_order(order)
         self.order = None # Этой заявки больше нет
 
     def notify_trade(self, trade):
@@ -123,12 +126,29 @@ class ForecastStrategy(bt.Strategy):
 
     def add_trade(self, trade):
         side = 'LONG' if trade.long else 'SHORT'
-        price_open = 0
-        size = 0
+        price_close = 0
+        size = 0 # self.getposition(trade.data).size
         cost = 0
         # (trade.price, trade.pnl, trade.pnlcomm, trade.commission, trade.long)
         # ['side', 'price_open', 'price_close', 'size', 'cost', 'pnl', 'commis', 'pnlcomm']
-        self.trades.loc[len(self.trades)] = (side, price_open, trade.price, size, cost, trade.pnl, trade.commission, trade.pnlcomm)
+        self.trades.loc[len(self.trades)] = (side, trade.price, price_close, size, cost, trade.pnl, trade.commission, trade.pnlcomm)
+
+
+    def add_order(self, order):
+        """
+        order.info - Может ID в реальной торговле передается?
+        ['side', 'open_price', 'close_price', 'size', 'cost', 'pnl', 'commis', 'pnlcomm']
+        """
+        side = 'BYU' if order.Buy else 'SELL'
+        open_price = 0
+        close_price = 0
+        size = order.size
+        cost = order.executed.value
+        pnl = 0
+        commis = 0
+        pnlcomm = 0
+        self.orders.loc[len(self.orders)] = (side, open_price, close_price, size, cost, pnl, commis, pnlcomm)
+
 
 
     def stop(self):
@@ -140,7 +160,8 @@ class ForecastStrategy(bt.Strategy):
 
         print(self.trades)
         print(f'{sum_pnl = :.2f} | {sum_pnlcomm = :.2f} | {sum_comm = :.2f} || {mean_pnl = :.2f} | {mean_pnlcomm = :.2f}')
-
+        print('-' * 100)
+        # print(self.orders)
 
 
 
@@ -163,5 +184,6 @@ if __name__ == '__main__': # Точка Входа при запуске это�
     print(f'Стартовый капитал: {cerebro.broker.getvalue():.0f}') # :.2f - точность 2 знака после десятичной точки
     cerebro.run() # Запуск ТС
     print(f'Конечный Капитал: {cerebro.broker.getvalue():.0f}')
-    cerebro.plot(style='candlestick', barup='green', subplot=False) # Печать Графики Котировок+Объемы + Эквити + Сделки. // Требуется версия 3.2.2 matplotlib #
+    # Печать Графики Котировок+Объемы + Эквити + Сделки. // Требуется версия 3.2.2 matplotlib
+    cerebro.plot(style='candle')  # style='candlestick' barup='green', subplot=False
 
