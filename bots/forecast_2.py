@@ -136,7 +136,7 @@ if __name__ == '__main__':
     pd.options.display.max_rows = 10  # Макс Кол-во Отображаемых Cтрок
 
     filename = 'F:\! PYTON\PyCharm\JupyterLab\data\ohlcvs\ETHUSDT_1d.csv'
-    data = bt.feeds.PandasData(dataname=load_data(filename, start='2024-08-01', end=''))
+    data = bt.feeds.PandasData(dataname=load_data(filename, start='2024-05-01', end=''))
 
     cerebro = bt.Cerebro()
     cerebro.addstrategy(ForecastStrategy)
